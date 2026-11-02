@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .ai import CoachAI, DemoAI
+from .errors import explain_failure
 from .service import Service
 from .store import Store
 from .telegram import run_bot
@@ -82,14 +83,13 @@ def main():
                 break
             try:
                 print("\nCoach> " + service.handle(text))
-            except Exception:
-                print(
-                    "Turn failed; previous state is saved. Check API credentials/connectivity and retry."
-                )
+            except Exception as exc:
+                print(explain_failure(exc).turn_reply())
     except KeyboardInterrupt:
         pass
-    except Exception:
-        parser.exit(1, "Startup failed. Check PostgreSQL, .env and network connectivity.\n")
+    except Exception as exc:
+        failure = explain_failure(exc)
+        parser.exit(1, f"Startup failed [{failure.code}]. {failure.advice}\n")
 
 
 if __name__ == "__main__":

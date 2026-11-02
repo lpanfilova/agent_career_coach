@@ -3,6 +3,8 @@ import logging
 
 import httpx
 
+from .errors import explain_failure
+
 log = logging.getLogger(__name__)
 
 
@@ -59,11 +61,14 @@ async def run_bot(service, token, owner):
                                 if text
                                 else "Please send text; file uploads are not supported."
                             )
-                        except Exception:
+                        except Exception as exc:
+                            failure = explain_failure(exc)
                             log.error(
-                                "Assessment turn failed; state rolled back. No message content logged."
+                                "Assessment turn failed [%s] (%s); state rolled back. No message content logged.",
+                                failure.code,
+                                type(exc).__name__,
                             )
-                            reply = "That turn failed; your previous state is saved. Please retry your answer or use /resume."
+                            reply = failure.turn_reply()
                         for part in chunks(reply):
                             await api("sendMessage", {"chat_id": owner, "text": part})
                     offset = update["update_id"] + 1

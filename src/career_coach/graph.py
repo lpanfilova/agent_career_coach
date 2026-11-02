@@ -19,7 +19,7 @@ def current_prompt(s):
         return PROMPTS[s.stage]
     if s.stage == "complete":
         return s.report or "Assessment complete."
-    return s.follow_up or s.assessment.questions[s.index].prompt
+    return s.assessment.questions[s.index].display_prompt(s.follow_up)
 
 
 class Turn(TypedDict):
@@ -60,7 +60,7 @@ def build_graph(ai):
         e = ai.evaluate(q, answers, s.follow_up)
         if e.follow_up and s.pending_answer is None:
             s.pending_answer, s.follow_up = text, e.follow_up
-            return {"reply": f"Feedback: {e.feedback}\n\n{e.follow_up}"}
+            return {"reply": f"Feedback: {e.feedback}\n\n{current_prompt(s)}"}
         e.follow_up = None
         s.results.append(Result(question=q, answers=answers, evaluation=e))
         s.pending_answer, s.follow_up = None, None

@@ -112,15 +112,6 @@ def test_rubric_bounds(score):
         Evaluation(score=score, evidence="x", feedback="x", gap="", follow_up=None)
 
 
-def test_ai_requires_verbatim_evidence():
-    ai = object.__new__(CoachAI)
-    ai.parse = Mock(
-        return_value=Evaluation(score=3, evidence="invented", feedback="x", gap="", follow_up=None)
-    )
-    with pytest.raises(ValueError, match="evidence"):
-        ai.evaluate(DemoAI().analyze({}).questions[0], ["I do not know"], None)
-
-
 def test_responses_structured_output_contract():
     ai = object.__new__(CoachAI)
     ai.model = "configured-model"
@@ -132,7 +123,7 @@ def test_responses_structured_output_contract():
     assert kwargs["store"] is False
     assert kwargs["model"] == "configured-model"
     ai.client.responses.parse.return_value = SimpleNamespace(output_parsed=None)
-    with pytest.raises(ValueError, match="refused"):
+    with pytest.raises(ValueError, match="ai_no_output"):
         ai.analyze({})
 
 
@@ -165,7 +156,8 @@ def test_match_separates_reported_and_demonstrated():
     assert "Topics without demonstrated evidence: python, sql" in reply
 
 
-def test_telegram_transport_ignores_other_users(monkeypatch):
+@pytest.mark.parametrize("turn_fails", [False, True])
+def test_telegram_transport_ignores_other_users(monkeypatch, caplog, turn_fails):
     import asyncio
 
     import httpx
@@ -215,10 +207,17 @@ def test_telegram_transport_ignores_other_users(monkeypatch):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     monkeypatch.setattr(telegram.httpx, "AsyncClient", lambda **kwargs: client)
     service = Service(MemoryStore(), DemoAI(), demo=True)
+    if turn_fails:
+        service.handle = Mock(side_effect=RuntimeError("secret-token-and-answer"))
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(telegram.run_bot(service, "fake-token", 42))
     sends = [payload for method, payload in calls if method == "sendMessage"]
     assert len(sends) == 1
     assert sends[0]["chat_id"] == 42
-    assert "target role" in sends[0]["text"]
+    if turn_fails:
+        assert "[internal_error]" in sends[0]["text"]
+        assert "[internal_error] (RuntimeError)" in caplog.text
+        assert "secret-token-and-answer" not in caplog.text + sends[0]["text"]
+    else:
+        assert "target role" in sends[0]["text"]
     assert calls[-1][1]["offset"] == 3

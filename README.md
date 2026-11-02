@@ -3,7 +3,7 @@
 Local, single-user career coach: Python + LangGraph + OpenAI + PostgreSQL + private Telegram polling.
 
 1. Intake: target, self-reported experience, preparation deadline, pasted opportunity.
-2. Four tasks: two technical questions, a coding exercise, an interview scenario. One at a time; up to one focused follow-up each. Submitted code is **read, never executed**.
+2. Four tasks: two technical questions, a coding exercise, an interview scenario. One at a time; up to one focused follow-up each. Review tasks include their function in a separate validated code field, displayed with the question and follow-up. Submitted code is **read, never executed**.
 3. Career Readiness Report: evidence, strengths, gaps, feedback, curated learning links and deadline-based practice steps. No overall readiness score.
 4. `/opportunities` ranks curated public sources across jobs, internships, research and entrepreneurship. `/match <description>` compares recognized requirement keywords with reported skills and demonstrated evidence. Neither checks eligibility or live availability.
 
@@ -43,20 +43,22 @@ uv run career-coach telegram
 
 Send `/start` privately. CLI and Telegram share the same active session. Your terminal must stay running. No hosting or scheduling is required.
 
+If a turn fails, the bot and terminal show a safe error code (for example `openai_quota`, `database_unavailable` or `ai_invalid_output`) and recovery instructions. No raw exception bodies, credentials or answer content are logged. The model selects a numbered answer excerpt, and the app copies its text exactly; it never asks the model to reproduce a quote. If a turn fails, use `/resume` and resend the answer. Restart the app after code or `.env` changes.
+
 ## Memory and checks
 
 PostgreSQL stores versioned session snapshots (profile, goal, transcript, follow-up, results, report/plan), per-question evidence observations, and processed Telegram update IDs. Each turn commits atomically under a single-user lock; failed model calls roll back. History preserves skill, criteria, score, evidence, model and rubric across `/new`. Compare similar questions manually; difficulty is not calibrated.
 
-Rubric v1: **0** no relevant evidence; **1** partial/unclear; **2** correct with explanation; **3** correct with trade-offs/edge cases. Exact answer quotes are validated before saving. AI judgments can be wrong; four questions cannot establish overall readiness. Demo observations are labeled. Missing evidence does not establish lack of ability.
+Rubric v1: **0** no relevant evidence; **1** partial/unclear; **2** correct with explanation; **3** correct with trade-offs/edge cases. Evidence quotes are copied directly from numbered answer excerpts selected by the model, with the selection constrained to valid IDs. AI judgments can be wrong; four questions cannot establish overall readiness. Demo observations are labeled. Missing evidence does not establish lack of ability.
 
 ```sh
 uv run python scripts/check.py             # offline checks
 uv run python scripts/check.py --postgres  # also isolated PostgreSQL + CLI restart checks
-uv run python scripts/check.py --live      # also 3 billable rubric examples; needs API key
+uv run python scripts/check.py --live      # also billable rubric, generation and multiline evidence checks; needs API key
 uv run ruff check src tests scripts
 ```
 
-The three optional live examples check weak, uncertain and well-supported answers with score ranges, including an instruction to inflate a grade. They are a small regression check, not a validated benchmark.
+The optional live checks include assessment generation and three examples covering weak, uncertain and well-supported answers with score ranges, including an instruction to inflate a grade. They are a small regression check, not a validated benchmark.
 
 Session snapshots are application-managed around a LangGraph turn; no separate graph checkpoint service is needed. OpenAI uses [Responses structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs) with `store=False`; model is configurable via `OPENAI_MODEL`. Profile and answer text are sent to OpenAI in live mode; Telegram transports bot messages. Local transcripts remain in PostgreSQL. No automatic deletion or encryption at rest is implemented.
 
