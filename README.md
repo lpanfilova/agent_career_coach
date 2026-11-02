@@ -40,21 +40,29 @@ For a scripted walkthrough without OpenAI calls, run `uv run career-coach chat -
 
 ## High-level architecture
 
+**Container diagram — Career coach**
+
 ```mermaid
 flowchart LR
-    CLI[Terminal] <--> Service
-    Telegram[Telegram private chat] <--> Owner[Owner ID check]
-    subgraph Local[Local Python application]
-        Owner <--> Service[Session service]
-        Service <--> Graph[LangGraph assessment flow]
-        Graph --> Report[Report and preparation plan]
-        Report --> Service
+    User(["User<br/>Person<br/>Prepares for a career opportunity"])
+    Telegram["Telegram<br/>External software system<br/>Delivers private bot messages"]
+    OpenAI["OpenAI API<br/>External software system<br/>Generates questions and evaluates answers"]
+
+    subgraph Coach["Career coach — software system"]
+        App["Coach application<br/>Container: Python + LangGraph<br/>CLI, owner checks, assessments and reports"]
+        DB[("Career data<br/>Container: PostgreSQL<br/>Profiles, goals, conversations, results and reports")]
     end
-    Graph <--> OpenAI[OpenAI API]
-    Service <--> DB[(PostgreSQL in Docker Compose)]
+
+    User -->|"Answers questions and reads reports<br/>Terminal stdin/stdout"| App
+    User -->|"Chats with the private bot<br/>Telegram client"| Telegram
+    App -->|"Polls messages and sends replies<br/>HTTPS Bot API"| Telegram
+    App -->|"Requests questions and evaluations<br/>HTTPS Responses API"| OpenAI
+    App -->|"Reads and writes session data<br/>SQL over PostgreSQL protocol"| DB
 ```
 
-OpenAI generates questions and evaluates answers. PostgreSQL stores profiles, goals, conversations, results and reports. The Python application runs locally; assessment content is sent to OpenAI, and Telegram transports messages when enabled.
+The boundary groups containers owned by the application. External services sit outside it; arrows show who initiates each interaction, with its purpose and interface. A container here means an application or data store, not necessarily a Docker container.
+
+The Python application runs locally, and PostgreSQL runs in Docker Compose. LangGraph coordinates assessment turns; owner checks and report generation run within the Python application. Assessment content is sent to OpenAI, and Telegram transports messages when enabled.
 
 ## Evaluation
 
