@@ -1,65 +1,72 @@
 # nextLevelPersonalCoachForCareerLevel
 
-Local, single-user career coach: Python + LangGraph + OpenAI + PostgreSQL + private Telegram polling.
+## What it does
 
-1. Intake: target, self-reported experience, preparation deadline, pasted opportunity.
-2. Four tasks: two technical questions, a coding exercise, an interview scenario. One at a time; up to one focused follow-up each. Review tasks include their function in a separate validated code field, displayed with the question and follow-up. Submitted code is **read, never executed**.
-3. Career Readiness Report: evidence, strengths, gaps, feedback, curated learning links and deadline-based practice steps. No overall readiness score.
-4. `/opportunities` ranks curated public sources across jobs, internships, research and entrepreneurship. `/match <description>` compares recognized requirement keywords with reported skills and demonstrated evidence. Neither checks eligibility or live availability.
+An AI career coach that helps students and professionals prepare for jobs, internships, research and entrepreneurial opportunities through a terminal or private Telegram chat. Each installation supports one user.
 
-## Run today
+Provide a target opportunity or job description, background and preparation deadline. The coach asks two technical questions, a coding exercise and an interview scenario, with follow-ups when reasoning needs clarification. It produces a **Career Readiness Report** with demonstrated strengths, knowledge gaps, feedback, learning resources and a preparation plan.
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/) and Docker Compose.
+Progress is saved between sessions. Submitted code is reviewed without execution. Opportunity discovery currently provides curated source suggestions and keyword matching against pasted descriptions; it does not retrieve live listings or verify eligibility.
+
+## How to run
+
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), Docker Compose and an OpenAI API key. Docker must be running.
 
 ```sh
-uv sync --extra dev
-cp .env.example .env     # only on first setup; keep an existing .env
-# Edit .env: set matching PostgreSQL password/URL and your OpenAI key.
+git clone https://github.com/lpanfilova/agent_career_coach.git
+cd agent_career_coach
+uv sync
+cp .env.example .env
+```
+
+Configure `.env`:
+
+- Set `OPENAI_API_KEY`.
+- Choose `POSTGRES_PASSWORD` and update the password in `DATABASE_URL` to match. Keep the example host, port and database settings for the default Compose setup.
+- For Telegram, set `TELEGRAM_BOT_TOKEN` from [BotFather](https://core.telegram.org/bots/tutorial#obtain-your-bot-token) and `TELEGRAM_USER_ID` to the account's numeric `message.from.id` from [getUpdates](https://core.telegram.org/bots/api#getupdates). Retrieve the ID after messaging the bot, before starting polling.
+
+Keep `.env` private; it is excluded from Git.
+
+```sh
 docker compose up -d --wait
 uv run career-coach chat
 ```
 
-**In this workspace, `.env` already contains generated local database credentials.** Add your OpenAI key there; do not overwrite it. `.env` is ignored. The database binds only to localhost:5433 and persists in a Docker volume. Python runs locally. Stop the database with `docker compose stop`.
+For Telegram, run `uv run career-coach telegram` instead, keep the process running and send `/start` privately to the bot. Only the configured user is accepted; group messages are ignored. Both interfaces share the same session.
 
-Your Amazon SDE Intern Summer 2027 intake is in `examples/amazon-intern.json` (user-supplied excerpt; not verified). It assumes **November 8, 2026** for “ASAP”; edit the deadline and add your programming experience as needed. Loading a profile starts a new assessment and keeps previous evidence in history.
+Use `/resume` to continue, `/report` to retrieve the completed report, `/new` to start another assessment and `/help` for all commands. Terminal users can enter multiline text with `/paste`, finish with `/end`, and exit with `/quit`.
 
-```sh
-uv run career-coach chat --profile examples/amazon-intern.json
-# No API key needed for a SCRIPTED walkthrough (not a real assessment):
-uv run career-coach chat --demo --profile examples/amazon-intern.json
+For a scripted walkthrough without OpenAI calls, run `uv run career-coach chat --demo`. PostgreSQL is still required. Stop the application with Ctrl+C and the database with `docker compose stop`.
+
+## High-level architecture
+
+```mermaid
+flowchart LR
+    CLI[Terminal] <--> Service
+    Telegram[Telegram private chat] <--> Owner[Owner ID check]
+    subgraph Local[Local Python application]
+        Owner <--> Service[Session service]
+        Service <--> Graph[LangGraph assessment flow]
+        Graph --> Report[Report and preparation plan]
+        Report --> Service
+    end
+    Graph <--> OpenAI[OpenAI API]
+    Service <--> DB[(PostgreSQL in Docker Compose)]
 ```
 
-In the CLI, `/paste` accepts multiline descriptions or code; finish with `/end` on its own line. `/quit` exits. Restart and use `/resume` to continue, including mid-follow-up. Switching between demo/live or model configurations requires `/new` (or `--profile`). Demo questions are fixed and are not tailored to the target.
+OpenAI generates questions and evaluates answers. PostgreSQL stores profiles, goals, conversations, results and reports. The Python application runs locally; assessment content is sent to OpenAI, and Telegram transports messages when enabled.
 
-Commands: `/start`, `/resume`, `/new`, `/report`, `/history`, `/opportunities`, `/match <description>`, `/help`. In Telegram, paste multiline text directly.
+## Evaluation
 
-## Telegram
+Answers are scored from **0** (no relevant evidence) to **3** (correct reasoning with trade-offs and edge cases). Reported experience is kept separate from demonstrated evidence. These short assessments do not establish overall career readiness, and scores across sessions are not calibrated.
 
-Create a bot through [BotFather](https://core.telegram.org/bots/tutorial#obtain-your-bot-token). Set `TELEGRAM_BOT_TOKEN` and your numeric `TELEGRAM_USER_ID` in `.env`. Your ID is `message.from.id` in a private message's [getUpdates response](https://core.telegram.org/bots/api#getupdates); retrieve it before starting polling and keep the token private. The bot ignores other users and all groups. Use one polling process and remove any existing webhook first if reusing a bot.
-
-```sh
-uv run career-coach telegram
-```
-
-Send `/start` privately. CLI and Telegram share the same active session. Your terminal must stay running. No hosting or scheduling is required.
-
-If a turn fails, the bot and terminal show a safe error code (for example `openai_quota`, `database_unavailable` or `ai_invalid_output`) and recovery instructions. No raw exception bodies, credentials or answer content are logged. The model selects a numbered answer excerpt, and the app copies its text exactly; it never asks the model to reproduce a quote. If a turn fails, use `/resume` and resend the answer. Restart the app after code or `.env` changes.
-
-## Memory and checks
-
-PostgreSQL stores versioned session snapshots (profile, goal, transcript, follow-up, results, report/plan), per-question evidence observations, and processed Telegram update IDs. Each turn commits atomically under a single-user lock; failed model calls roll back. History preserves skill, criteria, score, evidence, model and rubric across `/new`. Compare similar questions manually; difficulty is not calibrated.
-
-Rubric v1: **0** no relevant evidence; **1** partial/unclear; **2** correct with explanation; **3** correct with trade-offs/edge cases. Evidence quotes are copied directly from numbered answer excerpts selected by the model, with the selection constrained to valid IDs. AI judgments can be wrong; four questions cannot establish overall readiness. Demo observations are labeled. Missing evidence does not establish lack of ability.
+To run the automated checks:
 
 ```sh
-uv run python scripts/check.py             # offline checks
-uv run python scripts/check.py --postgres  # also isolated PostgreSQL + CLI restart checks
-uv run python scripts/check.py --live      # also billable rubric, generation and multiline evidence checks; needs API key
-uv run ruff check src tests scripts
+uv sync --extra dev
+uv run python scripts/check.py
+uv run python scripts/check.py --postgres
+uv run python scripts/check.py --postgres --live
 ```
 
-The optional live checks include assessment generation and three examples covering weak, uncertain and well-supported answers with score ranges, including an instruction to inflate a grade. They are a small regression check, not a validated benchmark.
-
-Session snapshots are application-managed around a LangGraph turn; no separate graph checkpoint service is needed. OpenAI uses [Responses structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs) with `store=False`; model is configurable via `OPENAI_MODEL`. Profile and answer text are sent to OpenAI in live mode; Telegram transports bot messages. Local transcripts remain in PostgreSQL. No automatic deletion or encryption at rest is implemented.
-
-Deferred: live listing retrieval and eligibility checks, calibrated progress metrics, durable Telegram delivery, retention tools, hosting and scheduling. Follow-up notes are kept locally in Git-ignored `ISSUES.md`.
+The checks cover session recovery, transaction rollback, duplicate updates, access restrictions, complete coding prompts and evidence extraction. `--postgres` requires the database; `--live` additionally uses the configured OpenAI key and incurs API charges. Live checks cover question generation, multiline code, follow-ups and three rubric examples. This small regression suite is not a validated assessment benchmark.
