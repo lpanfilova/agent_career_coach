@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.types.json import Jsonb
 
+from .metrics import summarize
 from .models import Session
 
 SCHEMA = """
@@ -17,6 +18,10 @@ CREATE TABLE IF NOT EXISTS observations (
     evidence text NOT NULL, criteria jsonb NOT NULL, model text NOT NULL, demo boolean NOT NULL,
     rubric text NOT NULL DEFAULT 'v1', created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (session_id, question_index)
+);
+CREATE TABLE IF NOT EXISTS evaluation_runs (
+    id bigserial PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),
+    summary jsonb NOT NULL
 );
 CREATE TABLE IF NOT EXISTS processed_events (
     event_id text PRIMARY KEY, reply text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -98,4 +103,16 @@ class Transaction:
                 f"{' | DEMO' if demo else ''}\nCriteria: {', '.join(criteria)}\nEvidence: {evidence!r}"
                 for skill, kind, score, evidence, model, demo, dt, rubric, criteria in rows
             )
+        )
+
+    def save_evaluation(self, summary):
+        self.conn.execute("INSERT INTO evaluation_runs(summary) VALUES (%s)", (Jsonb(summary),))
+
+    def metrics(self):
+        rows = self.conn.execute("SELECT state FROM sessions ORDER BY created_at, id").fetchall()
+        latest = self.conn.execute(
+            "SELECT summary FROM evaluation_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return summarize(
+            [Session.model_validate(row[0]) for row in rows], latest[0] if latest else None
         )

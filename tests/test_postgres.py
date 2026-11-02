@@ -37,6 +37,26 @@ def test_postgres_restart_idempotency_and_rollback(tmp_path):
             restarted.handle("follow-up response")
         assert "Career Readiness Report" in restarted.handle("/report")
         assert "python/technical" in restarted.handle("/history")
+        assert "not measured (0 samples)" in restarted.handle("/metrics")
+        # Store an actual fixture-run result in the isolated test schema, using a test double.
+        from unittest.mock import Mock
+
+        from career_coach.evaluation import run_evaluation
+        from career_coach.models import Evaluation
+
+        ai = Mock()
+        ai.evaluate.return_value = Evaluation(
+            score=1, evidence="I", feedback="test", gap="", follow_up="Why?"
+        )
+        benchmark = run_evaluation(ai, "test-model")
+        with store.turn() as tx:
+            tx.save_evaluation(benchmark)
+        assert "duplicate-detection-v1" in restarted.handle("/metrics")
+        assert "Scores within expected ranges: 2/3 (67%)" in restarted.handle("/metrics")
+        # Reuse completed questions without losing the first session's evidence.
+        restarted.handle("/retake")
+        with psycopg.connect(store.url) as conn:
+            assert conn.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
         with psycopg.connect(store.url) as conn:
             assert conn.execute("SELECT count(*) FROM observations").fetchone()[0] == 4
         with pytest.raises(RuntimeError):

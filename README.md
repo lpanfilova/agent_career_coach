@@ -34,7 +34,7 @@ uv run career-coach chat
 
 For Telegram, run `uv run career-coach telegram` instead, keep the process running and send `/start` privately to the bot. Only the configured user is accepted; group messages are ignored. Both interfaces share the same session.
 
-Use `/resume` to continue, `/report` to retrieve the completed report, `/new` to start another assessment and `/help` for all commands. Terminal users can enter multiline text with `/paste`, finish with `/end`, and exit with `/quit`.
+Use `/resume` to continue, `/report` to retrieve the completed report, `/new` to start another assessment, `/metrics` for evaluation results, `/retake` to repeat a completed assessment, and `/help` for all commands. Terminal users can enter multiline text with `/paste`, finish with `/end`, and exit with `/quit`.
 
 For a scripted walkthrough without OpenAI calls, run `uv run career-coach chat --demo`. PostgreSQL is still required. Stop the application with Ctrl+C and the database with `docker compose stop`.
 
@@ -66,15 +66,16 @@ The Python application runs locally, and PostgreSQL runs in Docker Compose. Lang
 
 ## Evaluation
 
-Answers are scored from **0** (no relevant evidence) to **3** (correct reasoning with trade-offs and edge cases). Reported experience is kept separate from demonstrated evidence. These short assessments do not establish overall career readiness, and scores across sessions are not calibrated.
+Use `/metrics` in CLI or Telegram to view sample counts and results:
 
-To run the automated checks:
+- **Effectiveness:** completed assessments with saved reports / sessions with generated questions; demo and intake-only sessions are excluded.
+- **Accuracy checks:** evidence quotes found in submitted answers and scores within expected ranges on three predefined examples.
+- **User progress:** score changes on identical questions, criteria and model. Use `/retake` to repeat a completed assessment.
+
+Answers use a 0–3 rubric. Missing data is shown as “not measured.” These prototype checks do not establish grading accuracy or overall career readiness; repeated practice can affect progress scores.
 
 ```sh
+uv run python scripts/evaluate.py          # three billable OpenAI examples; saves metrics
 uv sync --extra dev
-uv run python scripts/check.py
-uv run python scripts/check.py --postgres
-uv run python scripts/check.py --postgres --live
+uv run python scripts/check.py --postgres  # workflow, persistence and access-control tests
 ```
-
-The checks cover session recovery, transaction rollback, duplicate updates, access restrictions, complete coding prompts and evidence extraction. `--postgres` requires the database; `--live` additionally uses the configured OpenAI key and incurs API charges. Live checks cover question generation, multiline code, follow-ups and three rubric examples. This small regression suite is not a validated assessment benchmark.

@@ -5,7 +5,7 @@ from .graph import build_graph, current_prompt
 from .models import Session
 from .opportunities import discover, match_opportunity
 
-HELP = "Commands: /start or /resume, /new, /report, /history, /opportunities, /match <description>, /help. CLI: /quit."
+HELP = "Commands: /start or /resume, /new, /report, /history, /metrics, /retake, /opportunities, /match <description>, /help. CLI: /quit."
 
 
 class Service:
@@ -39,6 +39,30 @@ class Service:
             s.messages.append({"role": "user", "content": text})
             if command == "/help":
                 reply = HELP
+            elif command == "/metrics":
+                reply = tx.metrics()
+            elif command == "/retake":
+                if s.stage != "complete":
+                    reply = (
+                        "Complete the current assessment before /retake. Use /resume to continue."
+                    )
+                elif s.demo != self.demo or (not s.demo and s.model != self.model):
+                    reply = "Restore the session's model/mode before /retake so scores remain comparable."
+                else:
+                    s = Session(
+                        id=str(uuid4()),
+                        created_at=datetime.now(UTC).isoformat(),
+                        demo=s.demo,
+                        model=s.model,
+                        stage="assessment",
+                        profile=s.profile.copy(),
+                        assessment=s.assessment.model_copy(deep=True),
+                        messages=[{"role": "user", "content": text}],
+                    )
+                    reply = (
+                        "Retake: same questions, criteria and model. Practice effects may influence scores.\n\n"
+                        + current_prompt(s)
+                    )
             elif command == "/history":
                 reply = tx.history()
             elif command == "/opportunities":
